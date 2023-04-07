@@ -6,7 +6,7 @@ import ffmpeg
 from ffprobe import FFProbe
 import subprocess
 
-#python3 -m venv /home/user/venv/sandbox
+#xxxxxxxxxxxxxxxxxpython3 -m venv /home/user/venv/sandbox
 #source venv/sandbox/bin/activate
 #python3 python_llcut_like.py
 #/mnt/3tera/recordings/1006_20190909164300.ts
@@ -17,6 +17,51 @@ import subprocess
 #10509_20221029191500.ts  lady gucci
 #10034_20221023144000.ts  Cetto ce senzadubbiamente
 #1005_20211116202700.ts   joker
+
+#source venv/sandbox/bin/activate
+#cd /home/user/github/cutter
+#python3 cutter.py -i 1022_20190926185700.ts -o /mnt/3tera/videos/di_nuovo_in_gioco.mpg
+
+class myStream(object):
+    def __init__(self,l):
+        self.l = l
+        self.video = "Video:" in l
+        self.audio = "Audio:" in l
+        self.subtitle = "Subtitle:" in l
+        self.index = int(l.split('#')[1].split('[')[0].split(':')[1])
+        self.id = l.split(']')[0].split('x')[1]
+        if self.video:
+            self.framerate = int(l.split('fps')[0].split(',')[-1:][0].strip())
+            self.height = int(l.split('[SAR')[0].split(',')[-1:][0].strip().split('x')[1])
+            self.width = int(l.split('[SAR')[0].split(',')[-1:][0].strip().split('x')[0])
+            self.lang = l.split('(')[1].split(')')[0]
+
+        if self.audio:
+            self.lang = l.split('(')[1].split(')')[0]
+            
+                 
+    
+    def is_video(self):
+        return self.video
+
+    def is_audio(self):
+        return self.audio
+        
+    def is_subtitle(self):
+        return self.subtitle
+        
+    def language(self):
+        return self.lang
+
+class myFFprobe(object):
+    def __init__(self,file):    
+        result = subprocess.run(["/usr/bin/ffprobe", f"{file}"],capture_output=True, text=True)
+        self.streams = []
+        for l in result.stderr.splitlines():
+            if l.strip().startswith("Stream"):
+                self.streams.append(myStream(l))
+
+    
 def main(argv):
    inputfile = '1006_20190909164300.ts'
    inputfolder = '/mnt/3tera/recordings'
@@ -53,22 +98,12 @@ def main(argv):
        print ('Output file is ', outputfile)
    
    local_file_path= inputfolder + '/' + inputfile
-   metadata=FFProbe(local_file_path)
+   try:
+       metadata=FFProbe(local_file_path)
+   except:
+       print("FFProbe broken - try to use myFFprobe")
+       metadata=myFFprobe(local_file_path)
   
-   #s.DISPOSITION:attached_pic      s.bit_rate                      s.color_primaries               s.height                        s.nb_read_frames
-   #s.DISPOSITION:clean_effects     s.bits_per_raw_sample           s.color_range                   s.id                            s.nb_read_packets
-   #s.DISPOSITION:comment           s.chroma_location               s.color_space                   s.index                         s.pix_fmt
-   #s.DISPOSITION:default           s.closed_captions               s.color_transfer                s.is_attachment()               s.pixel_format()
-   #s.DISPOSITION:dub               s.codec()                       s.display_aspect_ratio          s.is_audio()                    s.profile
-   #s.DISPOSITION:forced            s.codec_description()           s.duration                      s.is_avc                        s.r_frame_rate
-   #s.DISPOSITION:hearing_impaired  s.codec_long_name               s.duration_seconds()            s.is_subtitle()                 s.refs
-   #s.DISPOSITION:karaoke           s.codec_name                    s.duration_ts                   s.is_video()                    s.sample_aspect_ratio
-   #s.DISPOSITION:lyrics            s.codec_tag                     s.field_order                   s.language()                    s.start_pts
-   #s.DISPOSITION:original          s.codec_tag_string              s.frame_size()                  s.level                         s.start_time
-   #s.DISPOSITION:timed_thumbnails  s.codec_type                    s.framerate                     s.max_bit_rate                  s.time_base
-   #s.DISPOSITION:visual_impaired   s.coded_height                  s.frames()                      s.nal_length_size               s.width
-   #s.avg_frame_rate                s.coded_width                   s.has_b_frames                  s.nb_frames
-   
    stream_map = ""   
    for s in metadata.streams:
         if s.is_video():
