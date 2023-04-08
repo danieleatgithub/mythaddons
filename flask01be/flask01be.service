@@ -1,0 +1,15 @@
+[Unit]
+Description=Mythtv addon backend 01
+After=network.target
+
+[Service]
+Environment="PATH=/home/user/github/flask01be/venv/bin"
+Environment="FLASK_DEBUG=development"
+Environment="APP_SETTINGS=config.DevelopmentConfig"
+WorkingDirectory=/home/user/github/flask01be/wks
+ExecStart=/home/user/github/flask01be/venv/bin/python3 /home/user/github/flask01be/flask01be.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+Alias=flask01be.service
