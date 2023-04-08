@@ -12,12 +12,6 @@ import subprocess
 #/mnt/3tera/recordings/1006_20190909164300.ts
 
 
-#10004_20230102201000.ts  non ci resta che piangere
-#10077_20221218195500.ts  il nome della rosa
-#10509_20221029191500.ts  lady gucci
-#10034_20221023144000.ts  Cetto ce senzadubbiamente
-#1005_20211116202700.ts   joker
-
 #source venv/sandbox/bin/activate
 #cd /home/user/github/cutter
 #python3 cutter.py -i 1022_20190926185700.ts -o /mnt/3tera/videos/di_nuovo_in_gioco.mpg
@@ -63,7 +57,7 @@ class myFFprobe(object):
 
     
 def main(argv):
-   inputfile = '1006_20190909164300.ts'
+   inputfile = '1006_xxxxxxxxxx.ts'
    inputfolder = '/mnt/3tera/recordings'
    outputfile = '/mnt/3tera/videos/newcut.ts'
    tempfolder = '/home/user/ts_tmp'
@@ -74,10 +68,6 @@ def main(argv):
       if opt == '-h':
          print ('cutter.py -i <inputfile> -f <inputfolder> -o <outputfile> -t <tempfolder> ')
          print ('python3 cutter.py -i 10004_20230102201000.ts -o /mnt/3tera/videos/non_ci_resta_che_piangere.mpg')
-         print ('python3 cutter.py -i 10077_20221218195500.ts -o /mnt/3tera/videos/il_nome_della_rosa.mpg')
-         print ('python3 cutter.py -i 10509_20221029191500.ts -o /mnt/3tera/videos/lady_gucci_interview.mpg')
-         print ('python3 cutter.py -i 10034_20221023144000.ts -o /mnt/3tera/videos/cetto_ce_senzadubbiamente.mpg')
-         print ('python3 cutter.py -i 1005_20211116202700.ts -o /mnt/3tera/videos/joker.mpg')
          sys.exit()
       elif opt in ("-i", "--ifile"):
          inputfile = arg
@@ -104,19 +94,27 @@ def main(argv):
        print("FFProbe broken - try to use myFFprobe")
        metadata=myFFprobe(local_file_path)
   
-   stream_map = ""   
+   stream_map_cut = ""   
+   stream_map_merge = ""   
+   out_index = 0
    for s in metadata.streams:
         if s.is_video():
             framerate= float(s.framerate)
-            stream_map = stream_map + f"-map 0:{s.index} -c:{s.index} copy "
+            stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
+            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
+            out_index += 1
             if verbose:
                 print(f"{s.index}: Video id:{s.id} fps:{s.framerate} size:{s.height}x{s.width}")            
         elif s.is_audio():
-            stream_map = stream_map + f"-map 0:{s.index} -c:{s.index} copy "
+            stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
+            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
+            out_index += 1
             if verbose:
                 print(f"{s.index}: Audio id:{s.id} lang:{s.language()}")
         elif s.is_subtitle():
-            stream_map = stream_map + f"-map 0:{s.index} -c:{s.index} copy "
+            stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
+            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
+            out_index += 1
             if verbose:
                 print(f"{s.index}: Subtitle id:{s.id} lang:{s.language()}")
         else:
@@ -154,7 +152,7 @@ def main(argv):
             end_mark = float(m['mark'])/framerate
             cut_duration = round((end_mark - start_mark),3)
         osegment=f"{tempfolder}/segment-{segment}.ts"
-        cmd=f"ffmpeg -hide_banner -ss {start_mark} -i {local_file_path} -t {cut_duration} {stream_map}"
+        cmd=f"ffmpeg -hide_banner -ss {start_mark} -i {local_file_path} -t {cut_duration} {stream_map_cut}"
         cmd+=" -map_metadata 0 -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y "
         cmd+=osegment
         merge_segments.append(f"file file:{osegment}")
@@ -167,7 +165,7 @@ def main(argv):
    segments_name="\\n".join(merge_segments)
    
    # ok da shell da errore con subprocess
-   cmd=f'echo "{segments_name}" | ffmpeg -hide_banner -f concat -safe 0 -protocol_whitelist file,pipe -i - {stream_map} -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y {outputfile}'
+   cmd=f'echo "{segments_name}" | ffmpeg -hide_banner -f concat -safe 0 -protocol_whitelist file,pipe -i - {stream_map_merge} -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y {outputfile}'
    if verbose:
     print(cmd)
    
@@ -175,8 +173,11 @@ def main(argv):
    
    # serve sudo
    jobs.append(f"chown mythtv.mythtv {outputfile}")
+   
+   jobs.append(f"mythcommflag --rebuild --video {outputfile}")
    print("\n\n".join(jobs))
    step=0
+   exit_val = 0
    if not dryrun:
        with open(f'{tempfolder}/out_{step}.txt','w+') as fout:
            with open(f'{tempfolder}/err_{step}.txt','w+') as ferr:
@@ -184,25 +185,17 @@ def main(argv):
        for job in jobs:
            with open(f'{tempfolder}/out_{step}.txt','w+') as fout:
                with open(f'{tempfolder}/err_{step}.txt','w+') as ferr:
-                   subprocess.run([job],shell=True,stdout=fout,stderr=ferr,universal_newlines=True)
+                   completed_process = subprocess.run([job],shell=True,stdout=fout,stderr=ferr,universal_newlines=True)
+                   print(f"STEP {step} exit value - {completed_process.returncode}")
+                   if completed_process.returncode != 0:
+                        exit_val = completed_process.returncode
                    step+=1
        
-   
-   # 1006 studio apert
-   # cut1 inizio ---  4:54.120   294.120  rosso (tagliare)
-   # cut2 4:54.120--  6.21.720   381.720  verde  (salvare ... bastone rosso 104 tattoo bari)   
-   # cut3 6.21.720..  25.24.840 1524.840  rosso  /tagliare
-   # cut4 25.24.840.. 30.57.960 1857.960  verde  (salvare ... nuoto fine pollice up piscina)
-   # cut5 30.57.960.. fine      rosso  (tagliare)   
-   # mark=7353 type=0 - 294.12
-   # mark=9543 type=1 - 381.72
-   # mark=38121 type=0 - 1524.84
-   # mark=46449 type=1 - 1857.96
-   # mark=81967 type=0 - 3278.68
-   
         
    cursor.close()
    cnx.close()
+   return(exit_val)
    
 if __name__ == "__main__":
-   main(sys.argv[1:])
+   exit_val = main(sys.argv[1:])
+   sys.exit(exit_val)
