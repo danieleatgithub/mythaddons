@@ -11,7 +11,7 @@ import os.path
 from flask import Flask
 from flask_cors import CORS
 from flask import request
-from flask01be_utility import clean_title, get_setting
+from flask01be_utility import clean_title, get_setting, get_media_path
 from flask01be_constants import constants
 import ffmpeg
 from ffprobe import FFProbe
@@ -225,14 +225,7 @@ def cut_recording():
         basename=data[0]['basename']
         title = data[0]['title']
         
-        # search recordings video in paths
-        query = 'select storagegroup.dirname as dirname from storagegroup where storagegroup.groupname = "Default"'
-        c_myth.execute(query)
-        video_inp_path = None
-        for item in c_myth.fetchall():
-                if os.path.isfile(item['dirname'].decode('utf8') + basename):
-                    video_inp_path = item['dirname'].decode('utf8')
-                    break            
+        video_inp_path = get_media_path(basename,logger=app.logger)
         if video_inp_path is None:
             response['out'] = {}
             response['debug'] = str(basename)
@@ -288,19 +281,51 @@ def get_cleaned_title():
         if raw_title is None and basename is None:
             response['message'] = "basename and raw_title are not set"
         else:
+            title = None
             if basename is not None:
                 query = f"select recorded.title from recorded where recorded.basename = '{basename}'"
                 c_myth.execute(query)
                 data = c_myth.fetchall()        
-                title = data[0]['title']
+                app.logger.info(f"get_cleaned_title: {data}")
+                if len(data) == 0:
+                    response['message'] = f"basename {basename} not found"
+                    response['debug'] = query
+                else:
+                    title = data[0]['title']
             else:
                 title = raw_title        
-            out['filename'] = clean_title(title,filename=True,logger=app.logger)
-            out['title'] = clean_title(title,filename=False,logger=app.logger)
-            response['error'] = False
-        response['out'] = json.dumps(out)
+            if title is not None:
+                out['filename'] = clean_title(title,filename=True,logger=app.logger)
+                out['title'] = clean_title(title,filename=False,logger=app.logger)
+                response['error'] = False
+        response['out'] = out
     return(json.dumps(response))
-  
+
+@app.route("/get_video_path",methods=['GET'])
+def get_video_path():
+    response = {}
+    response['error'] = True
+    response['debug'] = ""
+    response['out'] = {}
+    response['message'] = ""
+    response['count'] = 0
+    out = {}
+    if request.method == 'GET':
+        data = request.form
+        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
+        c_myth = cn_myth.cursor(dictionary=True)
+        basename = request.args.get('basename', default=None, type=str)
+        group = request.args.get('group', default="Default", type=str)
+        if basename is None:
+            response['message'] = "basename is not set"
+        else:
+            path = get_media_path(basename,group,logger=app.logger)
+            if path is not None:
+                out['path'] = path
+                response['error'] = False
+        response['out'] = out
+    return(json.dumps(response))
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=18800)
 

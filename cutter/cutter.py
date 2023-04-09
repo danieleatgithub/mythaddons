@@ -33,6 +33,8 @@ class myStream(object):
         if self.audio:
             self.lang = l.split('(')[1].split(')')[0]
             
+        if self.subtitle:
+            self.lang = l.split('(')[1].split(')')[0].split(',')[0]
                  
     
     def is_video(self):
@@ -51,16 +53,17 @@ class myFFprobe(object):
     def __init__(self,file):    
         result = subprocess.run(["/usr/bin/ffprobe", f"{file}"],capture_output=True, text=True)
         self.streams = []
+        print(result.stderr)
         for l in result.stderr.splitlines():
             if l.strip().startswith("Stream"):
                 self.streams.append(myStream(l))
 
     
 def main(argv):
-   inputfile = '1006_xxxxxxxxxx.ts'
-   inputfolder = '/mnt/3tera/recordings'
-   outputfile = '/mnt/3tera/videos/newcut.ts'
-   tempfolder = '/home/user/ts_tmp'
+   inputfile = 'test.ts'
+   inputfolder = '/tmp'
+   outputfile = '/tmp/newcut.ts'
+   tempfolder = '/tmp/ts_tmp'
    verbose = False
    dryrun  = False
    opts, args = getopt.getopt(argv,"hi:o:f:t:dv",["ifile=","ofile=","ifolder=","tempfolder=","dryrun","verbose"])
