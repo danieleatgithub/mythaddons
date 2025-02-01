@@ -11,24 +11,40 @@ import os.path
 from flask import Flask
 from flask_cors import CORS
 from flask import request
-from flask01be_utility import clean_title, get_setting, get_media_path
-from flask01be_constants import constants
+from utils.utilities import clean_title, get_setting, get_media_path
+from constants import constants
 import ffmpeg
 from ffprobe import FFProbe
-
 import logging
+
+from routes.cut_end import cut_end_bp
+from routes.cut_recording import cut_recording_bp
+from routes.cut_status import cut_status_bp
+from routes.get_cleaned_title import get_cleaned_title_bp
+from routes.get_video_path import get_video_path_bp
+from routes.info import info_bp
+from routes.get_disks_info import get_disks_info_bp
+from routes.get_partitions_info import get_partitions_info_bp
+
+#journalctl --no-pager -fxeu flask01be.service
 
 app = Flask(__name__)
 CORS(app)
 
-version = "1.0"
-thread_pool = {}
+app.config['VERSION'] = '2.0'
+app.config['THREAD_POOL'] = {}
 
 
+app.register_blueprint(cut_end_bp, url_prefix='/cut_end')
+app.register_blueprint(cut_recording_bp, url_prefix='/cut_recording')
+app.register_blueprint(cut_status_bp, url_prefix='/cut_status')
+app.register_blueprint(get_cleaned_title_bp, url_prefix='/get_cleaned_title')
+app.register_blueprint(get_video_path_bp, url_prefix='/get_video_path')
+app.register_blueprint(info_bp, url_prefix='/info')
+app.register_blueprint(get_disks_info_bp, url_prefix='/get_disks_info')
+app.register_blueprint(get_partitions_info_bp, url_prefix='/get_partitions_info')
 
-#x refactor https://flask.palletsprojects.com/en/2.2.x/patterns/packages/
-#x refactor https://github.com/pallets/flask/tree/2.2.3/examples/tutorial/flaskr
-import flask01be_services
+
 
 class CutJob(threading.Thread):
     def __init__(self,video_inp_path,video_inp_basename,video_out):
@@ -153,178 +169,6 @@ class CutJob(threading.Thread):
     def get(self):
         return self.jobs
         
-@app.route("/cut_status",methods=['GET'])
-def cut_status():
-    response = {}
-    response['error'] = True
-    response['debug'] = ""
-    response['out'] = {}
-    response['message'] = ""
-    response['count'] = 0
-    if request.method == 'GET':
-        id = request.args.get('id', default = '', type = str)
-        if not id in thread_pool.keys():
-            response['out'] = {}
-            response['debug'] = str(request)
-            response['message'] = f"id {id} not running"
-            app.logger.error(f"{id} not running")
-            return (json.dumps(response))
-
-        jobs = thread_pool[id].get()
-        running = thread_pool[id].is_running()
-        stage = thread_pool[id].get_stage()
-        total_stages = thread_pool[id].get_total_stages()
-        files = thread_pool[id].get_files()
-        out = {'name': 'flask01be', 'id':  id, 'running': running, 'stage': stage, 'total_stages': total_stages, 'files': files}
-        response['error'] = False
-        response['out'] = json.dumps(out)
-        response['debug'] = ""
-    else:
-        response['out'] = {}
-        response['debug'] = str(request)
-    return(json.dumps(response))
-    
-@app.route("/cut_end",methods=['POST'])
-def cut_end():
-    if request.method == 'POST':
-        id = request.args.get('id', default = '*', type = str)
-        if id != "*":
-            thread_pool[id].stop()
-            thread_pool[id].join()
-            del thread_pool[id]
-        else:    
-            for t in list(thread_pool.keys()):
-                thread_pool[t].stop()
-            for t in list(thread_pool.keys()):
-                thread_pool[t].join()
-                del thread_pool[t]
-                
-        return {'status': 'ok'}, 200
-    else:
-        return {'status': 'Method not allowed'}, 405
-    
-@app.route("/cut_recording",methods=['POST'])
-def cut_recording():
-    response = {}
-    response['error'] = True
-    response['debug'] = ""
-    response['out'] = {}
-    response['message'] = ""
-    response['count'] = 0
-    if request.method == 'POST':
-        data = request.form
-        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
-        c_myth = cn_myth.cursor(dictionary=True)
-        video_path = get_setting('videos',app.logger)
-        dryrun = request.args.get('dryrun', default=False, type=bool)
-
-        # get video filename and title
-        query = f"select recorded.basename,recorded.title from recorded where recorded.recordedid = {data['videoid']}"
-        c_myth.execute(query)
-        data = c_myth.fetchall()        
-        basename=data[0]['basename']
-        title = data[0]['title']
-        
-        video_inp_path = get_media_path(basename,logger=app.logger)
-        if video_inp_path is None:
-            response['out'] = {}
-            response['debug'] = str(basename)
-            response['message'] = f"{str(basename)} Video not found"
-            app.logger.error(response['message'])
-            return(json.dumps(response))
- 
-        # Get videos paths
-        out_basename = clean_title(title,filename=True,logger=app.logger)
-        video_out = video_path + out_basename + '.mpg'
-        query = 'select storagegroup.dirname as dirname from storagegroup where storagegroup.groupname = "Videos"'
-        c_myth.execute(query)
-        for item in c_myth.fetchall():
-            if os.path.isfile(item['dirname'].decode('utf8') + out_basename):
-                response['out'] = {}
-                response['debug'] = str(basename)
-                response['message'] = f"Video {item['dirname'].decode('utf8') + out_basename} already exists"
-                app.logger.error(response['message'])
-                return (json.dumps(response))
-
-        # Build output filename
-        # ###################
-        cut_thread = CutJob(video_inp_path,basename,video_out)
-        cut_thread.prepare_job(dryrun)
-        cut_thread.start()
-        id = cut_thread.get_id()
-        thread_pool[id] = cut_thread
-        
-        out = {'name': 'flask01be', 'title': title, 'data': basename, 'video_inp_path':  video_inp_path, 'id': id, 'video_out': video_out }
-        response['error'] = False
-        response['out'] = json.dumps(out)
-        response['debug'] = str(video_inp_path + basename)
-    else:
-        response['out'] = {}
-        response['debug'] = request
-    return(json.dumps(response))
-
-@app.route("/get_cleaned_title",methods=['GET'])
-def get_cleaned_title():
-    response = {}
-    response['error'] = True
-    response['debug'] = ""
-    response['out'] = {}
-    response['message'] = ""
-    response['count'] = 0
-    out = {}
-    if request.method == 'GET':
-        data = request.form
-        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
-        c_myth = cn_myth.cursor(dictionary=True)
-        basename = request.args.get('basename', default=None, type=str)
-        raw_title = request.args.get('raw_title', default=None, type=str)
-        if raw_title is None and basename is None:
-            response['message'] = "basename and raw_title are not set"
-        else:
-            title = None
-            if basename is not None:
-                query = f"select recorded.title from recorded where recorded.basename = '{basename}'"
-                c_myth.execute(query)
-                data = c_myth.fetchall()        
-                app.logger.info(f"get_cleaned_title: {data}")
-                if len(data) == 0:
-                    response['message'] = f"basename {basename} not found"
-                    response['debug'] = query
-                else:
-                    title = data[0]['title']
-            else:
-                title = raw_title        
-            if title is not None:
-                out['filename'] = clean_title(title,filename=True,logger=app.logger)
-                out['title'] = clean_title(title,filename=False,logger=app.logger)
-                response['error'] = False
-        response['out'] = out
-    return(json.dumps(response))
-
-@app.route("/get_video_path",methods=['GET'])
-def get_video_path():
-    response = {}
-    response['error'] = True
-    response['debug'] = ""
-    response['out'] = {}
-    response['message'] = ""
-    response['count'] = 0
-    out = {}
-    if request.method == 'GET':
-        data = request.form
-        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
-        c_myth = cn_myth.cursor(dictionary=True)
-        basename = request.args.get('basename', default=None, type=str)
-        group = request.args.get('group', default="Default", type=str)
-        if basename is None:
-            response['message'] = "basename is not set"
-        else:
-            path = get_media_path(basename,group,logger=app.logger)
-            if path is not None:
-                out['path'] = path
-                response['error'] = False
-        response['out'] = out
-    return(json.dumps(response))
     
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=18800)

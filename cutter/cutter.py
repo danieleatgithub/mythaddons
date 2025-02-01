@@ -6,6 +6,11 @@ import ffmpeg
 from ffprobe import FFProbe
 from constants import constants
 import subprocess
+import time
+import os
+import json
+import psutil
+import glob
 
 #xxxxxxxxxxxxxxxxxpython3 -m venv /home/user/venv/sandbox
 #source venv/sandbox/bin/activate
@@ -16,6 +21,12 @@ import subprocess
 #source venv/sandbox/bin/activate
 #cd /home/user/github/cutter
 #python3 cutter.py -i 1022_20190926185700.ts -o /mnt/3tera/videos/di_nuovo_in_gioco.mpg
+
+#/usr/local/bin/mythuser2 %DIR% %FILE% %JOBID%
+ERROR_ALREADY_RUNNING=254
+ERROR_BAD_PARAMS=253
+cutter_status = dict()
+cutter_status_file = '/tmp/cutter.json'
 
 class myStream(object):
     def __init__(self,l):
@@ -59,37 +70,133 @@ class myFFprobe(object):
             if l.strip().startswith("Stream"):
                 self.streams.append(myStream(l))
 
+def cutter_store_status(status,file):
+    with open(file, 'w') as fp:
+        json.dump(status, fp)
+        
+def cutter_reset_status():
+    return {
+        "inp_file": "",
+        "inp_folder": "",
+        "temp_folder": "",
+        "input_duration": 0,
+        "input_bytes": 0,
+        "output_bytes": 0,
+        "pid": os.getpid(),
+        "start": str(int(time.time())),
+        "finish": "0",
+        "status": "unknown",
+        "step": 0,
+        "total_steps": 0,
+        'step_stats':  dict(),
+        'conf': dict(),
+        'title': '',
+    }
+
+def execute_function(func, *args, **kwargs):
+    return func(*args, **kwargs)
     
+def get_video_duration(file_path):
+    """
+    Restituisce la durata di un video in secondi.
+    """
+    command = [
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-show_entries", "format=duration", file_path
+    ]
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        duration = json.loads(result.stdout)["format"]["duration"]
+        print(f"get_video_duration {file_path} {duration}")
+        return float(duration)  # Restituisce la durata in secondi
+    except Exception as e:
+        print(f"Errore durante l'analisi del file: {e}")
+        return float(0)
+        
+def compute_input_duration():
+        global cutter_status
+        secs = 0
+        files = glob.glob(f"{cutter_status['temp_folder']}/segment-*.ts")
+        print(f"compute_input_duration files:{repr(cutter_status)})")
+        for f in files:
+           seg_sec = get_video_duration(f"{f}")
+           if seg_sec == 0:
+                return(254)
+           secs += seg_sec 
+        cutter_status['input_duration'] = int(secs)
+        print(f"compute_input_duration out files:{repr(cutter_status)})")
+        return(0)
+                
 def main(argv):
+   global cutter_status
+   global cutter_status_file
    inputfile = 'test.ts'
    inputfolder = '/tmp'
    outputfile = '/tmp/newcut.ts'
-   tempfolder = '/tmp/ts_tmp'
-   verbose = False
-   dryrun  = False
-   opts, args = getopt.getopt(argv,"hi:o:f:t:dv",["ifile=","ofile=","ifolder=","tempfolder=","dryrun","verbose"])
+   config_file = '/var/www/cutter_config.json'
+   settings = dict()
+
+   pid = os.getpid()
+   opts, args = getopt.getopt(argv,"hi:o:f:t:dvsl:p:c:",["ifile=","ofile=","ifolder=","tempfolder=","dryrun","verbose","subtitle","cpulimit=","preset=","config="])
    for opt, arg in opts:
       if opt == '-h':
          print ('cutter.py -i <inputfile> -f <inputfolder> -o <outputfile> -t <tempfolder> ')
          print ('python3 cutter.py -i 10004_20230102201000.ts -o /mnt/3tera/videos/non_ci_resta_che_piangere.mpg')
+         print (f' Current config file {config_file} ')
          sys.exit()
       elif opt in ("-i", "--ifile"):
          inputfile = arg
       elif opt in ("-f", "--ifolder"):
          inputfolder = arg
-      elif opt in ("-t", "--tempfolder"):
-         tempfolder = arg
       elif opt in ("-o", "--ofile"):
          outputfile = arg
+      elif opt in ("-c", "--config"):
+         config_file = arg
+
+
+   try:
+      with open(config_file, 'r') as file:
+         settings = json.load(file)
+   except json.JSONDecodeError as e:
+      print(f"Errore nel parsing del file JSON: {e}")
+      return(ERROR_BAD_PARAMS)
+
+            
+   for opt, arg in opts:
+      if opt in ("-t", "--tempfolder"):
+         settings['tempfolder'] = arg
       elif opt in ("-v", "--verbose"):
-         verbose = True
+         settings['verbose'] = True
+      elif opt in ("-s", "--subtitle"):
+         settings['subtitle'] = True
       elif opt in ("-d", "--dryrun"):
-         dryrun = True
-   if verbose:
+         settings['dryrun'] = True
+      elif opt in ("-l", "--cpulimit"):
+         settings['cpulimit'] = arg
+      elif opt in ("-p", "--preset"):
+         settings['preset'] = arg
+
+   if settings['verbose']:
        print ('Input file is ', inputfile)
        print ('Input folder is ', inputfolder)
-       print ('Temp folder is ', tempfolder)
+       print ('Temp folder is ', settings['tempfolder'])
        print ('Output file is ', outputfile)
+       print (f'settings is: {repr(settings)}')
+   
+         
+   try:
+        with open(cutter_status_file, 'r') as file:
+            cutter_status = json.load(file)
+   except:
+        cutter_status = cutter_reset_status()
+
+   if cutter_status['pid'] != pid:
+        if psutil.pid_exists(cutter_status['pid']):
+            print(f"Cutter already running desc:{cutter_status})")
+            return(ERROR_ALREADY_RUNNING)
+
+   cutter_status = cutter_reset_status()
+   cutter_store_status(cutter_status,cutter_status_file)   
    
    local_file_path= inputfolder + '/' + inputfile
    try:
@@ -97,7 +204,23 @@ def main(argv):
    except:
        print("FFProbe broken - try to use myFFprobe")
        metadata=myFFprobe(local_file_path)
-  
+
+   cutter_status['pid'] = os.getpid()
+   cutter_status['status']='starting'
+   cutter_status['title']=''
+   cutter_status['out_file']=outputfile
+   cutter_status['inp_file']=inputfile
+   cutter_status['inp_folder']=inputfolder
+   cutter_status['temp_folder']=settings['tempfolder']
+   cutter_status['input_duration']=0
+   cutter_status['input_bytes']=0
+   cutter_status['compress_rate']=0
+   cutter_status['output_bytes']=0
+   cutter_status['jobtype']="none"
+   cutter_status['step_stats']= dict()
+   cutter_status['conf']= settings
+   cutter_store_status(cutter_status,cutter_status_file)   
+ 
    stream_map_cut = ""   
    stream_map_merge = ""   
    out_index = 0
@@ -105,24 +228,24 @@ def main(argv):
         if s.is_video():
             framerate= float(s.framerate)
             stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
-            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
+            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} libx265 -preset {settings['preset']} -crf 28 "
             out_index += 1
-            if verbose:
+            if settings['verbose']:
                 print(f"{s.index}: Video id:{s.id} fps:{s.framerate} size:{s.height}x{s.width}")            
         elif s.is_audio():
             stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
-            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
+            stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} aac -b:{out_index} 192k "
             out_index += 1
-            if verbose:
+            if settings['verbose']:
                 print(f"{s.index}: Audio id:{s.id} lang:{s.language()}")
-        elif s.is_subtitle():
+        elif s.is_subtitle() and not settings['skip_subtitle']:
             stream_map_cut = stream_map_cut + f"-map 0:{s.index} -c:{out_index} copy "
             stream_map_merge = stream_map_merge + f"-map 0:{out_index} -c:{out_index} copy "
             out_index += 1
-            if verbose:
+            if settings['verbose']:
                 print(f"{s.index}: Subtitle id:{s.id} lang:{s.language()}")
         else:
-            if verbose:
+            if settings['verbose']:
                 print(f"{s.index}: id:{s.id}")
         
    cnx = mysql.connector.connect(user='root', password=password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
@@ -136,14 +259,18 @@ def main(argv):
    cursor.execute(query)
    data = cursor.fetchall()
    starttime = str(data[0]['starttime'])
+   
+   query = f"select title from recorded where basename='{inputfile}'"
+   cursor.execute(query)
+   data = cursor.fetchall()
+   title = str(data[0]['title'])
+   cutter_status['title']=title
+   cutter_store_status(cutter_status,cutter_status_file)   
 
    query = f"select mark,type from recordedmarkup where chanid={chanid} and starttime='{starttime}' and type in (0,1) order by mark;"
    cursor.execute(query)
    data = cursor.fetchall()
-   
-#COMM_OPTS="-avoid_negative_ts make_zero -map 0:0 -c:0 copy -map 0:1 -c:1 copy -map 0:2 -c:2 copy -map 0:3 -c:3 copy -map_metadata 0 -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y"
-#CMD_1="ffmpeg -hide_banner -ss 292.990 -i $TS_INP -to 420.000 $COMM_OPTS $TS_TMP_01"
-   
+     
    start_mark = float(0)
    segment = 0
    merge_segments=[]
@@ -155,49 +282,96 @@ def main(argv):
         if m['type'] == 1:
             end_mark = float(m['mark'])/framerate
             cut_duration = round((end_mark - start_mark),3)
-        osegment=f"{tempfolder}/segment-{segment}.ts"
-        cmd=f"ffmpeg -hide_banner -ss {start_mark} -i {local_file_path} -t {cut_duration} {stream_map_cut}"
-        cmd+=" -map_metadata 0 -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y "
+        osegment=f"{settings['tempfolder']}/segment-{segment}.ts"
+        cmd=f"cpulimit -f -l {settings['cpulimit']} -- ffmpeg -threads 2 -nostdin -stats_period 5 -hide_banner -fflags +genpts -hide_banner -ss {start_mark} -i {local_file_path} -t {cut_duration} {stream_map_cut}"
+        cmd+=' -map_metadata 0 -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y '
         cmd+=osegment
+       
         merge_segments.append(f"file file:{osegment}")
         segment+=1
-        if verbose:
-            print(cmd)
-        jobs.append(cmd)
 
-#CMD_3="echo -e \"file file:$TS_TMP_01\nfile file:$TS_TMP_02\" | ffmpeg -hide_banner -f concat -safe 0 -protocol_whitelist file,pipe -i - -map 0:0 -c:0 copy -map 0:1 -c:1 copy -map 0:2 -c:2 copy -map 0:3 -c:3 copy -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y $TS_OUT"
+        if settings['verbose']:
+            print(cmd)
+        jobs.append(("cut",cmd))
+
    segments_name="\\n".join(merge_segments)
    
-   # ok da shell da errore con subprocess
-   cmd=f'echo "{segments_name}" | ffmpeg -hide_banner -f concat -safe 0 -protocol_whitelist file,pipe -i - {stream_map_merge} -movflags +faststart -default_mode infer_no_subs -ignore_unknown -f mpegts -y {outputfile}'
-   if verbose:
+   jobs.append(("function",compute_input_duration)) 
+   
+   cmd=  f'echo "{segments_name}" | '
+   cmd+= f'cpulimit -f -l {settings['cpulimit']} -- ffmpeg -threads 2 -nostdin -stats_period 5 -hide_banner -f concat -safe 0 -fflags +genpts -protocol_whitelist fd,file,pipe '
+   cmd+= f'-i - {stream_map_merge}   {outputfile}'
+   
+   if settings['verbose']:
     print(cmd)
    
-   jobs.append(cmd)
+   jobs.append(("merge",cmd))
+
+
+   if settings['verbose']:
+    print(cmd)
+    
+   # serve sudo farlo dal bash con il serverino flask
+   #jobs.append(f"chown mythtv:mythtv {outputfile}")
    
-   # serve sudo
-   jobs.append(f"chown mythtv.mythtv {outputfile}")
-   
-   jobs.append(f"mythcommflag --rebuild --video {outputfile}")
-   print("\n\n".join(jobs))
-   step=0
+   jobs.append(("mythcommflag",f"mythcommflag --rebuild --video={outputfile}"))
+   step=1
    exit_val = 0
-   if not dryrun:
-       with open(f'{tempfolder}/out_{step}.txt','w+') as fout:
-           with open(f'{tempfolder}/err_{step}.txt','w+') as ferr:
-               subprocess.run([f"rm -Rf {tempfolder}/*"],shell=True,stdout=fout,stderr=ferr)
-       for job in jobs:
-           with open(f'{tempfolder}/out_{step}.txt','w+') as fout:
-               with open(f'{tempfolder}/err_{step}.txt','w+') as ferr:
-                   completed_process = subprocess.run([job],shell=True,stdout=fout,stderr=ferr,universal_newlines=True)
-                   print(f"STEP {step} exit value - {completed_process.returncode}")
-                   if completed_process.returncode != 0:
-                        exit_val = completed_process.returncode
-                   step+=1
+   total_jobs = len(jobs) + 1
+   cutter_status['status']='running'
+   cutter_store_status(cutter_status,cutter_status_file)   
+   if not settings['dryrun']:
+       with open(f'{settings["tempfolder"]}/out_{step}.txt','w+') as fout:
+           with open(f'{settings["tempfolder"]}/err_{step}.txt','w+') as ferr:
+               subprocess.run([f"rm -Rf {settings['tempfolder']}/*"],shell=True,stdout=fout,stderr=ferr)
+       cutter_status['total_steps']=total_jobs
        
+       for jobtype, job in jobs:
+           cutter_status['jobtype']=jobtype
+           cutter_status['step']=step
+           stats = {'begin': str(int(time.time())), 'type': jobtype}
+           cutter_status['step_stats'][step]=stats
+           cutter_store_status(cutter_status,cutter_status_file)
+           segment = 0
+           with open(f'{settings["tempfolder"]}/out_{step}.txt','w+') as fout:
+               with open(f'{settings["tempfolder"]}/err_{step}.txt','w+') as ferr:
+                   if jobtype=='function':
+                        exit_val = execute_function(job)
+                        cutter_store_status(cutter_status,cutter_status_file)
+                   else:
+                        completed_process = subprocess.run([job],shell=True,stdout=fout,stderr=ferr,universal_newlines=True)
+                        exit_val = completed_process.returncode
+                   if jobtype=='cut':     
+                        cutter_status['input_bytes'] += os.path.getsize(f"{settings['tempfolder']}/segment-{segment}.ts")
+                        segment += 1
+                   if jobtype=='merge':     
+                        cutter_status['output_bytes'] = os.path.getsize(f"{outputfile}")
+                        cutter_status['compress_rate'] = 100 * ( 1 - cutter_status['output_bytes'] / cutter_status['input_bytes'])
+                   stats['end'] = str(int(time.time()))
+                   cutter_status['step_stats'][step]=stats
+                   cutter_store_status(cutter_status,cutter_status_file)
+                   print(f"STEP {step}/{total_jobs} exit value - {exit_val}")
+                   if exit_val != 0:
+                         print(f"ERROR {exit_val} - {job}")
+                         break;
+                   step+=1
+       cutter_status['step']=step
+       cutter_store_status(cutter_status,cutter_status_file)
+
+   else:
+       for jobtype, job in jobs:
+            print(f"{jobtype}:{job}")
+            time.sleep(1)
         
    cursor.close()
    cnx.close()
+   if exit_val != 0:
+        cutter_status['status']='error'
+   else:
+        cutter_status['status']='completed'
+
+   cutter_status['finish']=str(int(time.time()))
+   cutter_store_status(cutter_status,cutter_status_file)   
    return(exit_val)
    
 if __name__ == "__main__":
