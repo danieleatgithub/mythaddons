@@ -4,6 +4,7 @@ import mysql.connector
 import datetime
 import ffmpeg
 from ffprobe import FFProbe
+from constants import constants
 import subprocess
 
 #xxxxxxxxxxxxxxxxxpython3 -m venv /home/user/venv/sandbox
@@ -124,7 +125,7 @@ def main(argv):
             if verbose:
                 print(f"{s.index}: id:{s.id}")
         
-   cnx = mysql.connector.connect(user='root', password='a',host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
+   cnx = mysql.connector.connect(user='root', password=password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
    cursor = cnx.cursor(dictionary=True)
    query = f"select chanid from recorded where basename='{inputfile}'"
    cursor.execute(query)
