@@ -12,7 +12,7 @@ get_disks_info_bp = Blueprint('get_disks_info', __name__)
 def get_disk_temperature(device):
     try:
         result = subprocess.run(
-            ['/usr/sbin/smartctl', '-Aj', device],
+            ['/usr/bin/sudo', '/usr/sbin/smartctl', '-Aj', device],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
@@ -31,7 +31,7 @@ def get_disk_temperature(device):
 def get_disk_inventory(device):
     try:
         result = subprocess.run(
-            ['/usr/sbin/smartctl', '-ij', device],
+            ['/usr/bin/sudo', '/usr/sbin/smartctl', '-ij', device],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True

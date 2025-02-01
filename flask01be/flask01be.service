@@ -3,6 +3,8 @@ Description=Mythtv addon backend 01
 After=network.target
 
 [Service]
+User=flaskuser
+Group=flaskuser
 Environment="PATH=/home/user/github/flask01be/venv/bin"
 Environment="FLASK_DEBUG=development"
 Environment="APP_SETTINGS=config.DevelopmentConfig"
