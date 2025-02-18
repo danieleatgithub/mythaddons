@@ -248,7 +248,7 @@ def main(argv):
             if settings['verbose']:
                 print(f"{s.index}: id:{s.id}")
         
-   cnx = mysql.connector.connect(user='root', password=password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
+   cnx = mysql.connector.connect(user='root', password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
    cursor = cnx.cursor(dictionary=True)
    query = f"select chanid from recorded where basename='{inputfile}'"
    cursor.execute(query)
