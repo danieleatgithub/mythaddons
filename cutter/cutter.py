@@ -270,6 +270,9 @@ def main(argv):
    query = f"select mark,type from recordedmarkup where chanid={chanid} and starttime='{starttime}' and type in (0,1) order by mark;"
    cursor.execute(query)
    data = cursor.fetchall()
+   
+   cursor.close()
+   cnx.close()
      
    start_mark = float(0)
    segment = 0
@@ -314,10 +317,9 @@ def main(argv):
    # serve sudo farlo dal bash con il serverino flask
    #jobs.append(f"chown mythtv:mythtv {outputfile}")
    
-   jobs.append(("mythcommflag",f"mythcommflag --rebuild --video={outputfile}"))
-   step=1
+   step=0
    exit_val = 0
-   total_jobs = len(jobs) + 1
+   total_jobs = len(jobs)
    cutter_status['status']='running'
    cutter_store_status(cutter_status,cutter_status_file)   
    if not settings['dryrun']:
@@ -327,6 +329,7 @@ def main(argv):
        cutter_status['total_steps']=total_jobs
        
        for jobtype, job in jobs:
+           step+=1
            cutter_status['jobtype']=jobtype
            cutter_status['step']=step
            stats = {'begin': str(int(time.time())), 'type': jobtype}
@@ -354,7 +357,6 @@ def main(argv):
                    if exit_val != 0:
                          print(f"ERROR {exit_val} - {job}")
                          break;
-                   step+=1
        cutter_status['step']=step
        cutter_store_status(cutter_status,cutter_status_file)
 
@@ -363,8 +365,6 @@ def main(argv):
             print(f"{jobtype}:{job}")
             time.sleep(1)
         
-   cursor.close()
-   cnx.close()
    if exit_val != 0:
         cutter_status['status']='error'
    else:
