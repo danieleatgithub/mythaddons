@@ -346,7 +346,8 @@ def main(argv):
            with open(f'{settings["tempfolder"]}/err_{step}.txt','w+') as ferr:
                subprocess.run([f"rm -Rf {settings['tempfolder']}/*"],shell=True,stdout=fout,stderr=ferr)
        cutter_status['total_steps']=total_jobs
-       
+
+
        for jobtype, job in jobs:
            step+=1
            cutter_status['jobtype']=jobtype

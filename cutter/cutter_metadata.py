@@ -129,6 +129,7 @@ def main(argv):
       if 'actor' in r['role']:
          video_cast.append(r['name'].decode('utf-8'))
 
+
    if originalairdate is None:
       cutter_status['cutter_metadata']['year'] = 1895
    else:

@@ -10,14 +10,7 @@ import os
 import json
 import psutil
 import re
-#xxxxxxxxxxxxxxxxxpython3 -m venv /home/user/venv/sandbox
-#source venv/sandbox/bin/activate
-#python3 python_llcut_like.py
-#/mnt/3tera/recordings/1006_20190909164300.ts
 
-
-#source venv/sandbox/bin/activate
-#cd /home/user/github/cutter
 
 cutter_status = dict()
 cutter_status_file = '/tmp/cutter.json'
