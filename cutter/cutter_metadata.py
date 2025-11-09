@@ -11,6 +11,8 @@ import json
 ERROR_ALREADY_RUNNING=254
 ERROR_BAD_PARAMS=253
 ERROR_NO_CUT_STATUS=252
+ERROR_VIDEO_RECORD_NOT_FOUND=251
+
 cutter_status = dict()
 cutter_status_file = '/tmp/cutter.json'
 cutter_status_recording_file = None
@@ -44,9 +46,7 @@ def main(argv):
    global cutter_status_recording_file
    config_file = '/var/www/cutter_config.json'
    settings = dict()
-   exit_val = 0
 
-   pid = os.getpid()
    opts, args = getopt.getopt(argv,"hi:t:dvl:c:",["ifile=","tempfolder=","dryrun","verbose","cpulimit=","config="])
    for opt, arg in opts:
       if opt == '-h':
@@ -95,6 +95,14 @@ def main(argv):
    cnx = mysql.connector.connect(user='root', password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
    cursor = cnx.cursor(dictionary=True)
 
+
+   query = f"select intid from videometadata where filename='{video_filename}'"
+   data = execute_query(cursor, query)
+   if data is None or len(data) == 0:
+      print(f"video record: {query} not found {data}")
+      return (ERROR_VIDEO_RECORD_NOT_FOUND)
+   intid = str(data[0]['intid'])
+
    cutter_status['cutter_metadata']['status'] = 'running'
    cutter_store_status(cutter_status, cutter_status_file)
 
@@ -109,15 +117,8 @@ def main(argv):
    originalairdate = data[0]['originalairdate']
    description = data[0]['description']
 
-   query = f"select intid from videometadata where filename='{video_filename}'"
-   data = execute_query(cursor, query)
-   intid = str(data[0]['intid'])
-
    cutter_status['cutter_metadata']['keys'] = {'recorded.chanid': chanid, 'recorded.progstart': progstart, 'videometadata.intid': intid }
    cutter_store_status(cutter_status, cutter_status_file)
-
-   #SELECT videometadatacast.idcast, videocast.* FROM  videometadatacast join videocast on idcast=videocast.intid WHERE idvideo=2869
-   # query = f'SELECT  recordedcredits.role,recordedcredits.person,people.*,recorded.* FROM recordedcredits join people on recordedcredits.person=people.person join recorded on recorded.progstart=recordedcredits.starttime where recorded.chanid="{chanid}" and recordedcredits.starttime="{progstart}"'
 
    query = f'SELECT  recordedcredits.role,recordedcredits.person,people.* FROM recordedcredits join people on recordedcredits.person=people.person join recorded on recorded.progstart=recordedcredits.starttime where recorded.chanid="{chanid}" and recordedcredits.starttime="{progstart}"'
    credits = execute_query(cursor, query)
@@ -176,7 +177,7 @@ def main(argv):
 
    cursor.close()
    cnx.close()
-   return(exit_val)
+   return 0
    
 if __name__ == "__main__":
    exit_val = main(sys.argv[1:])
