@@ -1,6 +1,5 @@
 import json
 import mysql.connector
-import logging
 from constants import constants
 from flask import Blueprint, jsonify, current_app, request
 
@@ -9,7 +8,7 @@ info_bp = Blueprint('info', __name__)
 
 @info_bp.route("/",methods=['GET'])
 def info():
-    cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
+    cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],host=constants['mysql_ip'],database='mythconverg',auth_plugin='mysql_native_password')
     c_myth = cn_myth.cursor(dictionary=True)
     
     query = f"select count(*) as recordings from recorded"

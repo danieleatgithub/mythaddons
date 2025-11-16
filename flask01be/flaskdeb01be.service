@@ -1,0 +1,17 @@
+[Unit]
+Description=Lenovo server backend 01
+After=network.target
+
+[Service]
+User=flaskuser
+Group=flaskuser
+Environment="PATH=/home/daniele/PycharmProjects/PythonProject/.flaskbevenv/bin"
+Environment="FLASK_DEBUG=development"
+Environment="APP_SETTINGS=config.DevelopmentConfig"
+WorkingDirectory=/home/daniele/github/mythaddons/flask01be/wks
+ExecStart=/home/daniele/PycharmProjects/PythonProject/.flaskbevenv/bin/python3 /home/daniele/github/mythaddons/flask01be/flaskdeb01be.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+Alias=flaskdeb01be.service

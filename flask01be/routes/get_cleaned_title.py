@@ -30,7 +30,7 @@ def get_cleaned_title():
     out = {}
     if request.method == 'GET':
         data = request.form
-        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],database='mythconverg',auth_plugin='mysql_native_password')
+        cn_myth = mysql.connector.connect(user=constants['mysql_user'], password=constants['mysql_password'],host=constants['mysql_ip'],database='mythconverg',auth_plugin='mysql_native_password')
         c_myth = cn_myth.cursor(dictionary=True)
         basename = request.args.get('basename', default=None, type=str)
         raw_title = request.args.get('raw_title', default=None, type=str)
