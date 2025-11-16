@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 import sys, getopt
 import mysql.connector
-import datetime
 import ffmpeg
 from ffprobe import FFProbe
 from constants import constants
@@ -121,12 +120,29 @@ def compute_input_duration():
         for f in files:
            seg_sec = get_video_duration(f"{f}")
            if seg_sec == 0:
-                return(254)
+                return 254
            secs += seg_sec 
         cutter_status['input_duration'] = int(secs)
         print(f"compute_input_duration out files:{repr(cutter_status)})")
-        return(0)
-                
+        return 0
+
+def get_file_birth_date(file_path):
+    """
+    Restituisce la data di creazione di un file in epoch format integer.
+    in caso di errore 0
+    """
+    command = [
+        "/usr/bin/stat", "--printf=%W", file_path
+    ]
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        birth_date = result.stdout
+        print(f"get_file_birth_date {file_path} {birth_date}")
+        return int(birth_date)
+    except Exception as e:
+        print(f"Errore durante l'analisi del file: {e}")
+        return int(0)
+
 def main(argv):
    global cutter_status
    global cutter_status_file
@@ -135,6 +151,8 @@ def main(argv):
    outputfile = '/tmp/newcut.ts'
    config_file = '/var/www/cutter_config.json'
    settings = dict()
+   framerate = 0.0
+   cut_duration = 0
 
    pid = os.getpid()
    opts, args = getopt.getopt(argv,"hi:o:f:t:dvsl:p:c:",["ifile=","ofile=","ifolder=","tempfolder=","dryrun","verbose","subtitle","cpulimit=","preset=","config="])
@@ -159,7 +177,7 @@ def main(argv):
          settings = json.load(file)
    except json.JSONDecodeError as e:
       print(f"Errore nel parsing del file JSON: {e}")
-      return(ERROR_BAD_PARAMS)
+      return ERROR_BAD_PARAMS
 
             
    for opt, arg in opts:
@@ -193,7 +211,7 @@ def main(argv):
    if cutter_status['pid'] != pid:
         if psutil.pid_exists(cutter_status['pid']):
             print(f"Cutter already running desc:{cutter_status})")
-            return(ERROR_ALREADY_RUNNING)
+            return ERROR_ALREADY_RUNNING
 
    cutter_status = cutter_reset_status()
    cutter_store_status(cutter_status,cutter_status_file)   
@@ -205,6 +223,7 @@ def main(argv):
        print("FFProbe broken - try to use myFFprobe")
        metadata=myFFprobe(local_file_path)
 
+   cutter_status['recording_date']= get_file_birth_date(local_file_path)
    cutter_status['pid'] = os.getpid()
    cutter_status['status']='starting'
    cutter_status['title']=''
@@ -248,7 +267,7 @@ def main(argv):
             if settings['verbose']:
                 print(f"{s.index}: id:{s.id}")
         
-   cnx = mysql.connector.connect(user='root', password=password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
+   cnx = mysql.connector.connect(user='root', password=constants['mysql_password'],host='127.0.0.1',database='mythconverg',auth_plugin='mysql_native_password')
    cursor = cnx.cursor(dictionary=True)
    query = f"select chanid from recorded where basename='{inputfile}'"
    cursor.execute(query)
@@ -270,6 +289,9 @@ def main(argv):
    query = f"select mark,type from recordedmarkup where chanid={chanid} and starttime='{starttime}' and type in (0,1) order by mark;"
    cursor.execute(query)
    data = cursor.fetchall()
+   
+   cursor.close()
+   cnx.close()
      
    start_mark = float(0)
    segment = 0
@@ -314,10 +336,9 @@ def main(argv):
    # serve sudo farlo dal bash con il serverino flask
    #jobs.append(f"chown mythtv:mythtv {outputfile}")
    
-   jobs.append(("mythcommflag",f"mythcommflag --rebuild --video={outputfile}"))
-   step=1
-   exit_val = 0
-   total_jobs = len(jobs) + 1
+   step=0
+   exit_value = 0
+   total_jobs = len(jobs)
    cutter_status['status']='running'
    cutter_store_status(cutter_status,cutter_status_file)   
    if not settings['dryrun']:
@@ -325,8 +346,10 @@ def main(argv):
            with open(f'{settings["tempfolder"]}/err_{step}.txt','w+') as ferr:
                subprocess.run([f"rm -Rf {settings['tempfolder']}/*"],shell=True,stdout=fout,stderr=ferr)
        cutter_status['total_steps']=total_jobs
-       
+
+
        for jobtype, job in jobs:
+           step+=1
            cutter_status['jobtype']=jobtype
            cutter_status['step']=step
            stats = {'begin': str(int(time.time())), 'type': jobtype}
@@ -336,11 +359,11 @@ def main(argv):
            with open(f'{settings["tempfolder"]}/out_{step}.txt','w+') as fout:
                with open(f'{settings["tempfolder"]}/err_{step}.txt','w+') as ferr:
                    if jobtype=='function':
-                        exit_val = execute_function(job)
+                        exit_value = execute_function(job)
                         cutter_store_status(cutter_status,cutter_status_file)
                    else:
                         completed_process = subprocess.run([job],shell=True,stdout=fout,stderr=ferr,universal_newlines=True)
-                        exit_val = completed_process.returncode
+                        exit_value = completed_process.returncode
                    if jobtype=='cut':     
                         cutter_status['input_bytes'] += os.path.getsize(f"{settings['tempfolder']}/segment-{segment}.ts")
                         segment += 1
@@ -350,11 +373,10 @@ def main(argv):
                    stats['end'] = str(int(time.time()))
                    cutter_status['step_stats'][step]=stats
                    cutter_store_status(cutter_status,cutter_status_file)
-                   print(f"STEP {step}/{total_jobs} exit value - {exit_val}")
-                   if exit_val != 0:
-                         print(f"ERROR {exit_val} - {job}")
-                         break;
-                   step+=1
+                   print(f"STEP {step}/{total_jobs} exit value - {exit_value}")
+                   if exit_value != 0:
+                         print(f"ERROR {exit_value} - {job}")
+                         break
        cutter_status['step']=step
        cutter_store_status(cutter_status,cutter_status_file)
 
@@ -363,16 +385,14 @@ def main(argv):
             print(f"{jobtype}:{job}")
             time.sleep(1)
         
-   cursor.close()
-   cnx.close()
-   if exit_val != 0:
+   if exit_value != 0:
         cutter_status['status']='error'
    else:
         cutter_status['status']='completed'
 
    cutter_status['finish']=str(int(time.time()))
    cutter_store_status(cutter_status,cutter_status_file)   
-   return(exit_val)
+   return(exit_value)
    
 if __name__ == "__main__":
    exit_val = main(sys.argv[1:])
