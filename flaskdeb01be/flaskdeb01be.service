@@ -5,11 +5,11 @@ After=network.target
 [Service]
 User=flaskuser
 Group=flaskuser
-Environment="PATH=/home/daniele/PycharmProjects/PythonProject/.flaskbevenv/bin"
+Environment="PATH=/opt/flask01be/.venv/bin"
 Environment="FLASK_DEBUG=development"
 Environment="APP_SETTINGS=config.DevelopmentConfig"
-WorkingDirectory=/home/daniele/github/mythaddons/flask01be/wks
-ExecStart=/home/daniele/PycharmProjects/PythonProject/.flaskbevenv/bin/python3 /home/daniele/github/mythaddons/flask01be/flaskdeb01be.py
+WorkingDirectory=/opt/flask01be/wks
+ExecStart=/opt/flask01be/.venv/bin/python3 /opt/flask01be/flaskdeb01be.py
 Restart=always
 
 [Install]
