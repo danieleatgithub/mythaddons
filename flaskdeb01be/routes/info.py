@@ -1,6 +1,3 @@
-import json
-import mysql.connector
-from constants import constants
 from flask import Blueprint, jsonify, current_app, request
 
 

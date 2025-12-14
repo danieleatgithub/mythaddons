@@ -31,12 +31,36 @@ def shutdown():
         current_app.logger.error(f"Error canceling shutdown: {e}")
         out['message'] = {"error canceling previous shutdown": str(e)}
         return jsonify(out), 500
-
     current_app.logger.info(f"Shutdown cancelled")
+
+    # cancel only
+    if data.get('cancel', False):
+        out['message'] = {
+            "stderr": cancel_result.stderr,
+            "stdout": cancel_result.stdout,
+            "message": "shutdown cancelled"
+        }
+        return jsonify(out), 200
+
     if not all(k in data for k in ('day', 'month', 'year', 'hour', 'minute')) and not data.get('now', False):
         out['message']=f"No shutdown schedule requested now:{data.get('now', False)}"
         current_app.logger.info(out['message'] + f"data:{repr(data)}")
         return jsonify(out)
+    mode = '-h'
+    if data.get('reboot', False):
+        mode = '-r'
+        if data.get('boot_win',False):
+            schedule_result = subprocess.run(
+                ['/usr/bin/sudo', '/opt/flask01be/scripts/boot_win.sh'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            current_app.logger.info(f"set windows{schedule_result.stdout} {schedule_result.stderr}")
+            if schedule_result.returncode != 0:
+                current_app.logger.error(f"Error set grub: {schedule_result.stderr}")
+                out['message'] = {"error set grub": schedule_result.stderr}
+                return jsonify(out), 500
 
     try:
         current_app.logger.info(f"now:{data.get('now', False)} data:{repr(data)}")
@@ -59,13 +83,12 @@ def shutdown():
 
         # comando shutdown con +m
         schedule_result = subprocess.run(
-            ['/usr/bin/sudo', '/usr/sbin/shutdown', '-h', '--no-wall', f'+{minutes_from_now}'],
+            ['/usr/bin/sudo', '/usr/sbin/shutdown', mode, '--no-wall', f'+{minutes_from_now}'],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
         )
-
-        current_app.logger.info(f"Shutdown scheduled {schedule_result.stdout} {schedule_result.stderr}")
+        current_app.logger.info(f"Shutdown scheduled mode:{mode} out:{schedule_result.stdout} err:{schedule_result.stderr}")
 
         if schedule_result.returncode != 0:
             current_app.logger.error(f"Error scheduling shutdown: {schedule_result.stderr}")
@@ -74,9 +97,10 @@ def shutdown():
 
         out['message'] = {
             "stderr": schedule_result.stderr,
-            "stdout": schedule_result.stdout
+            "stdout": schedule_result.stdout,
+            "message": f"mode: {mode} window_reboot: {data.get('boot_win',False)} "
         }
-        return jsonify(out)
+        return jsonify(out), 200
 
     except KeyError as e:
         out['message'] = {"error": f"Missing parameter: {e}"}
