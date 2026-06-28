@@ -1,0 +1,13 @@
+/flask01be/flask01be_constants.py
+/flask01be/constants.py
+/cutter/constants.py
+/flask01be/ssl
+
+
+# Cache di Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambiente virtuale
+flask01be/venv/
