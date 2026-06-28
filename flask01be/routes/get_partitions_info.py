@@ -25,8 +25,6 @@ def get_partitions_info():
         '/mnt/3tera': {'label': 'Linux fs' },
         '/mnt/1tera': {'label': 'Linux fs' },
         '/mnt/2terb': {'label': 'Linux root' },
-        '/var/lib/mysql': {'label': 'databases' },
-        '/var/www': {'label': 'www root' },
         '/var/sddtmp': {'label': 'temp on SDD' },
     }
     response['count'] = len(partitions.keys())
@@ -41,7 +39,7 @@ def get_partitions_info():
             partitions[p.mountpoint]['percent'] = usage.percent
     if request.method == 'GET':
         data = request.form
-        current_app.logger.info(f"get_partitions_info {{disk}} {repr(partitions)}")
+        current_app.logger.info(f"get_partitions_info {repr(partitions)}")
         response['error'] = False  
         response['out'] = partitions
     return(json.dumps(response))

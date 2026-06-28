@@ -18,6 +18,7 @@ cutter_status_file = '/tmp/cutter.json'
 cutter_status_recording_file = None
 
 def cutter_store_status(status,file):
+    print(f"cutter_metadata write status {repr(status)}")
     with open(file, 'w') as fp:
         json.dump(status, fp)
         

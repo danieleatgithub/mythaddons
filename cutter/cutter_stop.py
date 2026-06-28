@@ -49,6 +49,7 @@ def kill_process_and_children(pid):
     return(0)
 
 def cutter_store_status(status,file):
+    print(f"cutter_stop write status {repr(status)}")
     with open(file, 'w') as fp:
         json.dump(status, fp)
 
@@ -66,11 +67,18 @@ def main(argv):
         print(f"no status file")
         return(1)
  
-   if not psutil.pid_exists(cutter_status['pid']) and cutter_status['status'] != 'completed':
-        print(f"Cutter pid {cutter_status['pid']} not running status:{cutter_status['status']}")
+   if not psutil.pid_exists(cutter_status['pid']) and cutter_status['status'] == 'running':
+        print(f"Cutter pid {cutter_status['pid']} not running but status is {cutter_status['status']} (job aborted)")
+        cutter_status['status']='aborted'
+        cutter_status['finish']=str(int(time.time()))
+        cutter_store_status(cutter_status,cutter_status_file)  
         return(2)
 
-   ret= kill_process_and_children(cutter_status['pid'])  
+   if   cutter_status['status'] != 'running':
+        print(f"Cutter pid {cutter_status['pid']} running but status is {cutter_status['status']}")
+        return(3)
+
+   ret= kill_process_and_children(cutter_status['pid'])
    cutter_status['status']='killed'
    cutter_status['finish']=str(int(time.time()))
    cutter_store_status(cutter_status,cutter_status_file)  

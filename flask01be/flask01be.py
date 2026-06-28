@@ -171,5 +171,5 @@ class CutJob(threading.Thread):
         
     
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=18800)
+    app.run(host='0.0.0.0',port=18800,ssl_context=('/home/user/github/flask01be/ssl/i5-mythtv-server.crt','/home/user/github/flask01be/ssl/i5-mythtv-server.key'))
 
